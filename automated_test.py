@@ -1,0 +1,122 @@
+import sys
+import os
+import time
+import unittest
+from unittest.mock import MagicMock, patch
+
+# プロジェクトルートをパスに追加
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from src.config_manager import ConfigManager
+from src.srt_generator import SrtGenerator
+from src.hotkey_manager import HotkeyManager
+from src.obs_controller import ObsController
+
+class AutomatedSystemTest(unittest.TestCase):
+    def setUp(self):
+        with patch('src.config_manager.ConfigManager.load_config') as mock_load, \
+             patch('src.config_manager.ConfigManager.save_config') as mock_save:
+            mock_load.return_value = {
+                "current_preset": "Default",
+                "presets": {
+                    "Default": {
+                        "obs": {
+                            "host": "localhost",
+                            "port": 4455,
+                            "password": "",
+                            "path": "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
+                            "profile": "",
+                            "scene_collection": ""
+                        },
+                        "hotkeys": {
+                            "text": "設定字幕"
+                        },
+                        "subtitles": {
+                            "duration": 3.0
+                        }
+                    }
+                }
+            }
+            self.config = ConfigManager("data/test_config_temp.json")
+        self.srt = SrtGenerator()
+
+    def test_config_retrieval(self):
+        """設定が正しく読み込めるかテスト"""
+        self.assertEqual(self.config.get("obs.host"), "localhost")
+        self.assertEqual(self.config.get("hotkeys.text"), "設定字幕")
+        self.assertEqual(self.config.get("subtitles.duration"), 3.0)
+
+    def test_srt_formatting(self):
+        """SRTの時刻フォーマットが正しいかテスト"""
+        self.assertEqual(self.srt.format_time(0), "00:00:00,000")
+        self.assertEqual(self.srt.format_time(3661.5), "01:01:01,500")
+
+    @patch('keyboard.add_hotkey')
+    @patch('keyboard.unhook_all')
+    def test_hotkey_recording(self, mock_unhook, mock_add):
+        """ホットキーの記録プロセスをテスト"""
+        hotkey_config = {"text": "Test Setting Subtitle"}
+        
+        # モックのコールバック
+        mock_get_text = MagicMock(return_value="Test Setting Subtitle")
+        mock_show_window = MagicMock()
+        
+        manager = HotkeyManager(
+            hotkey_config,
+            get_setting_text_callback=mock_get_text,
+            show_input_window_callback=mock_show_window
+        )
+        
+        # モニタリング開始
+        manager.start_monitoring()
+        manager.start_time = time.time() - 10  # 10秒前に開始したことにする
+        
+        # 1. 設定字幕(Ctrl+Alt+T)記録をシミュレート
+        manager._record_setting_text()
+        markers = manager.get_markers()
+        self.assertEqual(len(markers), 1)
+        self.assertEqual(markers[0]["text"], "Test Setting Subtitle")
+        self.assertGreaterEqual(markers[0]["time"], 10)
+        
+        # 2. 小窓表示トリガー(Ctrl+Alt+G)をシミュレート
+        manager._trigger_input_window()
+        mock_show_window.assert_called_once()
+        
+        # 3. チャプター記録をシミュレート
+        manager._record_chapter()
+        self.assertEqual(len(markers), 2)
+        self.assertEqual(markers[1]["text"], "チャプター 1")
+        
+        # 4. 手動マーカー追加（小窓からの確定）をシミュレート
+        manager.add_manual_marker("Manual Typed Subtitle", 15.5)
+        self.assertEqual(len(markers), 3)
+        self.assertEqual(markers[2]["text"], "Manual Typed Subtitle")
+        self.assertEqual(markers[2]["time"], 15.5)
+        
+        manager.stop_monitoring()
+        mock_unhook.assert_called_once()
+
+    def test_obs_controller_interface(self):
+        """OBSコントローラーのインターフェース（モック）テスト"""
+        with patch('obsws_python.ReqClient') as mock_client:
+            obs = ObsController("localhost", 4455, "password")
+            
+            # Start Recording
+            mock_client.return_value.start_record = MagicMock()
+            self.assertTrue(obs.start_recording())
+            
+            # Get Status
+            mock_client.return_value.get_record_status.return_value.output_active = True
+            self.assertTrue(obs.get_record_status())
+            
+            # Stop Recording
+            mock_response = MagicMock()
+            mock_response.output_path = "C:/videos/test.mp4"
+            mock_client.return_value.stop_record.return_value = mock_response
+            
+            path = obs.stop_recording()
+            self.assertEqual(path, "C:/videos/test.mp4")
+
+if __name__ == "__main__":
+    print("Running Automated System Tests...")
+    unittest.main(argv=['first-arg-is-ignored'], exit=False)

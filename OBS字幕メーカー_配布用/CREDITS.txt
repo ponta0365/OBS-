@@ -1,0 +1,44 @@
+==================================================
+                 謝辞とライセンス
+==================================================
+
+本ソフトウェア「OBS字幕メーカー」は、以下のオープンソースライブラリおよびツール群を利用して開発されました。
+各ライブラリの開発者様、およびオープンソースコミュニティの皆様に深く感謝いたします。
+
+■ 使用ライブラリ・ツール一覧
+
+1. CustomTkinter
+   - 用途: GUI（画面インターフェース）の構築
+   - ライセンス: MIT License
+   - 開発者/リポジトリ: Tom Schimansky (https://github.com/TomSchimansky/CustomTkinter)
+
+2. obsws-python
+   - 用途: OBS WebSocket 5.x 経由での録画制御・設定取得
+   - ライセンス: MIT License
+   - 開発者/リポジトリ: upgradept (https://github.com/upgradept/obsws-python)
+
+3. keyboard
+   - 用途: Windows上でのグローバルショートカットキー監視
+   - ライセンス: MIT License
+   - 開発者/リポジトリ: Boppreh (https://github.com/boppreh/keyboard)
+
+4. win11toast
+   - 用途: Windows 10/11におけるトースト通知（通知バナー）の送信
+   - ライセンス: MIT License
+   - 開発者/リポジトリ: chidiwilliams (https://github.com/chidiwilliams/win11toast)
+
+5. Playwright for Python (※開発・テスト検証用)
+   - 用途: ブラウザ管理およびテスト自動化
+   - ライセンス: Apache License 2.0
+   - 開発者/リポジトリ: Microsoft (https://github.com/microsoft/playwright-python)
+
+
+■ ライセンス互換性の点検について
+
+本ソフトウェアは「GNU General Public License Version 3 (GPL v3)」のもとで配布されます。
+利用している外部ライブラリとのライセンス互換性については以下の通り問題ありません。
+
+- MIT License: 非常に寛容なライセンスであり、GPL v3と完全に互換性があります。
+- Apache License 2.0: GPL v3と互換性があるため、本ソフトをGPL v3で配布することに法的な問題はありません。
+
+==================================================

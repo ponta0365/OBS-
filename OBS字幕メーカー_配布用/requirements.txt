@@ -1,0 +1,4 @@
+customtkinter
+obsws-python
+keyboard
+win11toast
