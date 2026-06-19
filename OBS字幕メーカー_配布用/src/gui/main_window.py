@@ -32,6 +32,7 @@ class MainWindow(ctk.CTk):
         
         self._setup_ui()
         self._setup_global_hotkeys()
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _is_admin(self):
         import ctypes
@@ -667,3 +668,31 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             self._notify("Error", f"Failed to reset hotkeys: {e}")
             logging.error(f"Failed to manually reset hotkeys: {e}")
+
+    def _on_closing(self):
+        # Stop recording safely if it's running
+        import sys
+        if self.is_recording:
+            from tkinter import messagebox
+            if not messagebox.askyesno("警告", "録画中ですが、アプリを終了しますか？\n(録画は強制停止されます)"):
+                return
+            
+            # Stop hotkeys and disconnect OBS
+            if self.hotkeys:
+                self.hotkeys.stop_monitoring()
+            if self.obs:
+                try:
+                    self.obs.stop_recording()
+                    self.obs.disconnect()
+                except Exception:
+                    pass
+        
+        # Unhook all global hotkeys from this process
+        try:
+            keyboard.unhook_all()
+        except Exception:
+            pass
+            
+        logging.info("Application is closing. Cleaned up hotkeys.")
+        self.destroy()
+        sys.exit(0)

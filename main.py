@@ -2,8 +2,28 @@ import argparse
 import sys
 import logging
 import os
+import ctypes
+
+# Mutex handle storage to prevent garbage collection
+_single_instance_mutex = None
 
 def main():
+    # Single instance check using Windows Named Mutex
+    MUTEX_NAME = "Local\\OBS_Subtitle_Maker_Single_Instance_Mutex"
+    kernel32 = ctypes.windll.kernel32
+    global _single_instance_mutex
+    _single_instance_mutex = kernel32.CreateMutexW(None, True, MUTEX_NAME)
+    last_error = kernel32.GetLastError()
+    
+    if last_error == 183: # ERROR_ALREADY_EXISTS
+        ctypes.windll.user32.MessageBoxW(
+            0, 
+            "OBS字幕メーカーは既に起動しています。\n二重起動はできません。", 
+            "二重起動エラー", 
+            0x10 | 0x0  # MB_ICONERROR | MB_OK
+        )
+        sys.exit(0)
+
     # Setup logging to file
     log_path = os.path.join("data", "app.log")
     os.makedirs("data", exist_ok=True)
