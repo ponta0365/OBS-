@@ -492,8 +492,11 @@ class MainWindow(ctk.CTk):
 
     def _open_input_window(self):
         if hasattr(self, "input_window") and self.input_window and self.input_window.winfo_exists():
+            self.input_window.deiconify() # Restore if minimized
             self.input_window.lift()
             self.input_window.focus_force()
+            self.input_window.attributes("-topmost", True)
+            self.input_entry.focus_force() # Force focus back to input box
             return
 
         self.input_window = ctk.CTkToplevel(self)
@@ -515,7 +518,11 @@ class MainWindow(ctk.CTk):
 
         self.input_entry = ctk.CTkEntry(frame, width=380)
         self.input_entry.pack(pady=(5, 0), fill="x")
-        self.input_entry.focus_set()
+        
+        # Focus both window and entry immediately
+        self.input_window.lift()
+        self.input_window.focus_force()
+        self.input_entry.focus_force()
 
         self.input_entry.bind("<Return>", self._on_input_submit)
         self.input_entry.bind("<KeyPress>", self._on_input_keypress)
