@@ -11,12 +11,14 @@ class HotkeyManager:
         self.start_time = None
         self.is_monitoring = False
         self.chapter_count = 0
+        self.handlers = []
 
     def start_monitoring(self):
         self.markers = []
         self.start_time = time.time()
         self.is_monitoring = True
         self.chapter_count = 0
+        self.handlers = []
         
         # Get keybindings from config, falling back to original defaults
         key_record_subtitle = self.hotkey_config.get("key_record_subtitle", "ctrl+alt+t")
@@ -24,27 +26,35 @@ class HotkeyManager:
         key_add_chapter = self.hotkey_config.get("key_add_chapter", "alt+c")
         
         try:
-            keyboard.add_hotkey(key_record_subtitle, self._record_setting_text)
+            h = keyboard.add_hotkey(key_record_subtitle, self._record_setting_text)
+            self.handlers.append(h)
             logging.info(f"Hotkey registered: '{key_record_subtitle}' for recording setting text")
         except Exception as e:
             logging.error(f"Failed to register hotkey '{key_record_subtitle}': {e}")
             
         try:
-            keyboard.add_hotkey(key_open_window, self._trigger_input_window)
+            h = keyboard.add_hotkey(key_open_window, self._trigger_input_window)
+            self.handlers.append(h)
             logging.info(f"Hotkey registered: '{key_open_window}' for input window trigger")
         except Exception as e:
             logging.error(f"Failed to register hotkey '{key_open_window}': {e}")
             
         try:
-            keyboard.add_hotkey(key_add_chapter, self._record_chapter)
+            h = keyboard.add_hotkey(key_add_chapter, self._record_chapter)
+            self.handlers.append(h)
             logging.info(f"Hotkey registered: '{key_add_chapter}' for auto-chapter")
         except Exception as e:
             logging.error(f"Failed to register hotkey '{key_add_chapter}': {e}")
 
     def stop_monitoring(self):
         self.is_monitoring = False
-        keyboard.unhook_all()
-        logging.info("Hotkey monitoring stopped")
+        for h in self.handlers:
+            try:
+                keyboard.remove_hotkey(h)
+            except Exception as e:
+                logging.debug(f"Failed to remove hotkey handler: {e}")
+        self.handlers = []
+        logging.info("Hotkey monitoring stopped (individual handlers removed)")
 
     def _record_setting_text(self):
         if not self.is_monitoring:

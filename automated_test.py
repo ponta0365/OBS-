@@ -52,8 +52,8 @@ class AutomatedSystemTest(unittest.TestCase):
         self.assertEqual(self.srt.format_time(3661.5), "01:01:01,500")
 
     @patch('keyboard.add_hotkey')
-    @patch('keyboard.unhook_all')
-    def test_hotkey_recording(self, mock_unhook, mock_add):
+    @patch('keyboard.remove_hotkey')
+    def test_hotkey_recording(self, mock_remove, mock_add):
         """ホットキーの記録プロセスをテスト"""
         hotkey_config = {"text": "Test Setting Subtitle"}
         
@@ -94,7 +94,7 @@ class AutomatedSystemTest(unittest.TestCase):
         self.assertEqual(markers[2]["time"], 15.5)
         
         manager.stop_monitoring()
-        mock_unhook.assert_called_once()
+        self.assertEqual(mock_remove.call_count, 3)
 
     def test_obs_controller_interface(self):
         """OBSコントローラーのインターフェース（モック）テスト"""
