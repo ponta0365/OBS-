@@ -490,11 +490,40 @@ class MainWindow(ctk.CTk):
     def _show_input_window_safe(self):
         self.after(0, self._open_input_window)
 
+    def _force_focus_window(self, window):
+        """Windows APIを使用してウィンドウをフォアグラウンドにし、フォーカスを強制します。"""
+        if os.name != 'nt':
+            window.lift()
+            window.focus_force()
+            return
+
+        import ctypes
+        window.update_idletasks()
+        try:
+            hwnd = window.winfo_id()
+            user32 = ctypes.windll.user32
+            
+            # 最小化されていたら元に戻す、そうでなければ表示
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, 9) # SW_RESTORE
+            else:
+                user32.ShowWindow(hwnd, 5) # SW_SHOW
+
+            # Altキーの空押しでSetForegroundWindowの制限をバイパス
+            user32.keybd_event(0x12, 0, 0, 0) # Alt down
+            user32.SetForegroundWindow(hwnd)
+            user32.keybd_event(0x12, 0, 2, 0) # Alt up
+            
+            user32.SetActiveWindow(hwnd)
+        except Exception as e:
+            logging.error(f"Failed to force focus window: {e}")
+            
+        window.lift()
+        window.focus_force()
+
     def _open_input_window(self):
         if hasattr(self, "input_window") and self.input_window and self.input_window.winfo_exists():
-            self.input_window.deiconify() # Restore if minimized
-            self.input_window.lift()
-            self.input_window.focus_force()
+            self._force_focus_window(self.input_window)
             self.input_window.attributes("-topmost", True)
             self.input_entry.focus_force() # Force focus back to input box
             return
@@ -520,8 +549,7 @@ class MainWindow(ctk.CTk):
         self.input_entry.pack(pady=(5, 0), fill="x")
         
         # Focus both window and entry immediately
-        self.input_window.lift()
-        self.input_window.focus_force()
+        self._force_focus_window(self.input_window)
         self.input_entry.focus_force()
 
         self.input_entry.bind("<Return>", self._on_input_submit)
