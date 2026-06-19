@@ -15,7 +15,11 @@ class ConfigManager:
             "scene_collection": ""
         },
         "hotkeys": {
-            "text": "設定字幕"
+            "text": "設定字幕",
+            "key_record_toggle": "ctrl+alt+r",
+            "key_record_subtitle": "ctrl+alt+t",
+            "key_open_window": "alt+g",
+            "key_add_chapter": "alt+c"
         },
         "subtitles": {
             "duration": 3.0
@@ -72,8 +76,27 @@ class ConfigManager:
                 if "text" not in preset["hotkeys"]:
                     preset["hotkeys"]["text"] = "設定字幕"
                     updated = True
+                # Add default keybindings if missing
+                if "key_record_toggle" not in preset["hotkeys"]:
+                    preset["hotkeys"]["key_record_toggle"] = "ctrl+alt+r"
+                    updated = True
+                if "key_record_subtitle" not in preset["hotkeys"]:
+                    preset["hotkeys"]["key_record_subtitle"] = "ctrl+alt+t"
+                    updated = True
+                if "key_open_window" not in preset["hotkeys"]:
+                    preset["hotkeys"]["key_open_window"] = "alt+g"
+                    updated = True
+                if "key_add_chapter" not in preset["hotkeys"]:
+                    preset["hotkeys"]["key_add_chapter"] = "alt+c"
+                    updated = True
             else:
-                preset["hotkeys"] = {"text": "設定字幕"}
+                preset["hotkeys"] = {
+                    "text": "設定字幕",
+                    "key_record_toggle": "ctrl+alt+r",
+                    "key_record_subtitle": "ctrl+alt+t",
+                    "key_open_window": "alt+g",
+                    "key_add_chapter": "alt+c"
+                }
                 updated = True
             
             # Add subtitles.duration if missing

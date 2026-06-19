@@ -33,13 +33,27 @@ class MainWindow(ctk.CTk):
         self._setup_ui()
         self._setup_global_hotkeys()
 
-    def _setup_global_hotkeys(self):
-        # Register global hotkey for start/stop recording
+    def _is_admin(self):
+        import ctypes
         try:
-            keyboard.add_hotkey("ctrl+alt+r", self._toggle_recording_safe)
-            logging.info("Global hotkey ctrl+alt+r registered")
+            return ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            return False
+
+    def _setup_global_hotkeys(self):
+        # Unhook first to prevent duplicates
+        try:
+            keyboard.unhook_all()
+        except Exception:
+            pass
+
+        # Register global hotkey for start/stop recording from config
+        toggle_key = self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r")
+        try:
+            keyboard.add_hotkey(toggle_key, self._toggle_recording_safe)
+            logging.info(f"Global hotkey '{toggle_key}' registered for recording toggle")
         except Exception as e:
-            logging.error(f"Failed to register global hotkey: {e}")
+            logging.error(f"Failed to register global hotkey '{toggle_key}': {e}")
 
     def _toggle_recording_safe(self):
         # Called from keyboard thread, needs to be safe with Tkinter
@@ -77,6 +91,20 @@ class MainWindow(ctk.CTk):
 
         self.open_folder_button = ctk.CTkButton(self.sidebar, text="Open Output Folder", command=self._open_output_directory)
         self.open_folder_button.pack(pady=10, padx=10)
+
+        self.reset_hotkeys_button = ctk.CTkButton(self.sidebar, text="Reset Hotkeys", command=self._reset_hotkeys_action)
+        self.reset_hotkeys_button.pack(pady=10, padx=10)
+
+        # Admin privilege check warning label
+        self.admin_warning_label = None
+        if not self._is_admin():
+            self.admin_warning_label = ctk.CTkLabel(
+                self.sidebar, 
+                text="⚠️管理者未実行\n(キーが効かない事があります)", 
+                font=ctk.CTkFont(size=11),
+                text_color="orange"
+            )
+            self.admin_warning_label.pack(pady=(20, 10), padx=10, side="bottom")
 
         # Main Content
         self.main_frame = ctk.CTkScrollableFrame(self)
@@ -169,15 +197,20 @@ class MainWindow(ctk.CTk):
         self.hotkey_label = ctk.CTkLabel(self.main_frame, text="Subtitle & Hotkey Settings", font=ctk.CTkFont(size=16, weight="bold"))
         self.hotkey_label.pack(pady=(20, 10), anchor="w")
 
-        self.setting_text_input = self._create_input("Setting Subtitle (Ctrl+Alt+T):", self.config.get("hotkeys.text"))
+        self.setting_text_input = self._create_input("Setting Subtitle Text:", self.config.get("hotkeys.text"))
         self.subtitle_duration_input = self._create_input("Display Duration (sec):", str(self.config.get("subtitles.duration")))
 
+        # Keybindings inputs
+        self.key_record_toggle_input = self._create_input("Start/Stop Rec Hotkey:", self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r"))
+        self.key_record_subtitle_input = self._create_input("Record Subtitle Hotkey:", self.config.get("hotkeys.key_record_subtitle", "ctrl+alt+t"))
+        self.key_open_window_input = self._create_input("Open Input Window Hotkey:", self.config.get("hotkeys.key_open_window", "alt+g"))
+        self.key_add_chapter_input = self._create_input("Add Chapter Hotkey:", self.config.get("hotkeys.key_add_chapter", "alt+c"))
+
         help_text = (
-            "【ショートカットキー案内】\n"
-            "・Ctrl + Alt + R : 録画の開始 / 停止\n"
-            "・Ctrl + Alt + T : 上記で設定した「設定字幕」を入力\n"
-            "・Alt + G        : 自由入力用の「小窓」を表示\n"
-            "・Alt + C        : 自動カウントチャプター（チャプター 1, 2...）を入力"
+            "【ショートカットキーについて】\n"
+            "・キーが動作しなくなった時は、左側の「Reset Hotkeys」ボタンをお試しください。\n"
+            "・ゲーム画面等でショートカットを反応させるには、本アプリを\n"
+            "  「管理者として実行」で起動する必要があります。"
         )
         self.help_label = ctk.CTkLabel(self.main_frame, text=help_text, justify="left", font=ctk.CTkFont(size=12))
         self.help_label.pack(pady=(10, 0), anchor="w", padx=10)
@@ -202,14 +235,18 @@ class MainWindow(ctk.CTk):
             preset_data = {
                 "obs": {
                     "host": self.obs_host.get(),
-                    "port": int(self.obs_port.get()),
+                    "port": int(self.obs_port.get()) if self.obs_port.get().isdigit() else 4455,
                     "password": self.obs_password.get(),
                     "path": self.obs_path.get(),
                     "profile": self.obs_profile_var.get(),
                     "scene_collection": self.obs_scene_col_var.get()
                 },
                 "hotkeys": {
-                    "text": self.setting_text_input.get()
+                    "text": self.setting_text_input.get(),
+                    "key_record_toggle": self.key_record_toggle_input.get().strip().lower(),
+                    "key_record_subtitle": self.key_record_subtitle_input.get().strip().lower(),
+                    "key_open_window": self.key_open_window_input.get().strip().lower(),
+                    "key_add_chapter": self.key_add_chapter_input.get().strip().lower()
                 },
                 "subtitles": {
                     "duration": float(self.subtitle_duration_input.get()) if self.subtitle_duration_input.get() else 3.0
@@ -242,6 +279,12 @@ class MainWindow(ctk.CTk):
         # Update Hotkeys & Subtitles
         self._update_entry(self.setting_text_input, self.config.get("hotkeys.text"))
         self._update_entry(self.subtitle_duration_input, str(self.config.get("subtitles.duration")))
+
+        # Update Keybindings
+        self._update_entry(self.key_record_toggle_input, self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r"))
+        self._update_entry(self.key_record_subtitle_input, self.config.get("hotkeys.key_record_subtitle", "ctrl+alt+t"))
+        self._update_entry(self.key_open_window_input, self.config.get("hotkeys.key_open_window", "alt+g"))
+        self._update_entry(self.key_add_chapter_input, self.config.get("hotkeys.key_add_chapter", "alt+c"))
 
         # Update Output settings
         self._update_entry(self.base_dir_input, self.config.get("output.base_dir", "data"))
@@ -295,13 +338,21 @@ class MainWindow(ctk.CTk):
 
     def _save_settings(self):
         self.config.set("obs.host", self.obs_host.get())
-        self.config.set("obs.port", int(self.obs_port.get()))
+        try:
+            self.config.set("obs.port", int(self.obs_port.get()))
+        except ValueError:
+            self.config.set("obs.port", 4455)
         self.config.set("obs.password", self.obs_password.get())
         self.config.set("obs.path", self.obs_path.get())
         self.config.set("obs.profile", self.obs_profile_var.get())
         self.config.set("obs.scene_collection", self.obs_scene_col_var.get())
         
         self.config.set("hotkeys.text", self.setting_text_input.get())
+        self.config.set("hotkeys.key_record_toggle", self.key_record_toggle_input.get().strip().lower())
+        self.config.set("hotkeys.key_record_subtitle", self.key_record_subtitle_input.get().strip().lower())
+        self.config.set("hotkeys.key_open_window", self.key_open_window_input.get().strip().lower())
+        self.config.set("hotkeys.key_add_chapter", self.key_add_chapter_input.get().strip().lower())
+
         try:
             duration = float(self.subtitle_duration_input.get())
             self.config.set("subtitles.duration", duration)
@@ -313,6 +364,7 @@ class MainWindow(ctk.CTk):
         self.config.set("output.dir", self.output_dir_input.get())
         
         self.config.save_config()
+        self._setup_global_hotkeys() # Apply newly saved hotkeys
         print("Settings saved.")
 
     def _toggle_recording(self):
@@ -601,3 +653,17 @@ class MainWindow(ctk.CTk):
             self._notify("Folder Created", f"Created date folder:\n{today}")
         except Exception as e:
             self._notify("Error", f"Failed to create folder: {e}")
+
+    def _reset_hotkeys_action(self):
+        try:
+            self._setup_global_hotkeys()
+            # If currently recording, also reset the recording session hotkeys
+            if self.is_recording and self.hotkeys:
+                self.hotkeys.stop_monitoring()
+                self.hotkeys.start_monitoring()
+                logging.info("Reset hotkeys: Re-hooked active recording session hotkeys")
+            self._notify("Hotkeys Reset", "ショートカットキーを再登録しました。")
+            logging.info("Hotkeys manually reset by user action")
+        except Exception as e:
+            self._notify("Error", f"Failed to reset hotkeys: {e}")
+            logging.error(f"Failed to manually reset hotkeys: {e}")

@@ -18,16 +18,28 @@ class HotkeyManager:
         self.is_monitoring = True
         self.chapter_count = 0
         
-        # 1. Ctrl + Alt + T: 設定した字幕を入力
-        keyboard.add_hotkey("ctrl+alt+t", self._record_setting_text)
+        # Get keybindings from config, falling back to original defaults
+        key_record_subtitle = self.hotkey_config.get("key_record_subtitle", "ctrl+alt+t")
+        key_open_window = self.hotkey_config.get("key_open_window", "alt+g")
+        key_add_chapter = self.hotkey_config.get("key_add_chapter", "alt+c")
         
-        # 2. Alt + G: 入力用小窓を表示
-        keyboard.add_hotkey("alt+g", self._trigger_input_window)
-        
-        # 3. Alt + C: 自動チャプターの作成
-        keyboard.add_hotkey("alt+c", self._record_chapter)
-        
-        logging.info("Hotkey monitoring started (Ctrl+Alt+T, Ctrl+Alt+G, Alt+C registered)")
+        try:
+            keyboard.add_hotkey(key_record_subtitle, self._record_setting_text)
+            logging.info(f"Hotkey registered: '{key_record_subtitle}' for recording setting text")
+        except Exception as e:
+            logging.error(f"Failed to register hotkey '{key_record_subtitle}': {e}")
+            
+        try:
+            keyboard.add_hotkey(key_open_window, self._trigger_input_window)
+            logging.info(f"Hotkey registered: '{key_open_window}' for input window trigger")
+        except Exception as e:
+            logging.error(f"Failed to register hotkey '{key_open_window}': {e}")
+            
+        try:
+            keyboard.add_hotkey(key_add_chapter, self._record_chapter)
+            logging.info(f"Hotkey registered: '{key_add_chapter}' for auto-chapter")
+        except Exception as e:
+            logging.error(f"Failed to register hotkey '{key_add_chapter}': {e}")
 
     def stop_monitoring(self):
         self.is_monitoring = False
