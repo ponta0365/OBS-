@@ -585,16 +585,26 @@ class MainWindow(ctk.CTk):
             else:
                 user32.ShowWindow(hwnd, 5) # SW_SHOW
 
-            # Altキー (VK_MENU = 0x12) が既に押されているかチェック
-            # 押されている場合はAltキーのシミュレーションをスキップして、キーが「押しっぱなし」状態になるのを防ぎます。
-            alt_pressed = (user32.GetAsyncKeyState(0x12) & 0x8000) != 0
-            if not alt_pressed:
-                user32.keybd_event(0x12, 0, 0, 0) # Alt down
-            user32.SetForegroundWindow(hwnd)
-            if not alt_pressed:
-                user32.keybd_event(0x12, 0, 2, 0) # Alt up
+            # 現在のフォアグラウンドウィンドウのスレッドIDと、ターゲットウィンドウのスレッドIDを取得
+            kernel32 = ctypes.windll.kernel32
+            foreground_hwnd = user32.GetForegroundWindow()
             
-            user32.SetActiveWindow(hwnd)
+            process_id = ctypes.c_ulong()
+            foreground_thread_id = user32.GetWindowThreadProcessId(foreground_hwnd, ctypes.byref(process_id))
+            current_thread_id = kernel32.GetCurrentThreadId()
+
+            # スレッド入力をアタッチしてSetForegroundWindowの制限をバイパス
+            attached = False
+            if foreground_thread_id != current_thread_id and foreground_thread_id != 0:
+                attached = bool(user32.AttachThreadInput(current_thread_id, foreground_thread_id, True))
+
+            try:
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+                user32.SetActiveWindow(hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(current_thread_id, foreground_thread_id, False)
         except Exception as e:
             logging.error(f"Failed to force focus window: {e}")
             
