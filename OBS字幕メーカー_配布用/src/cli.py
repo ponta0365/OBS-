@@ -57,11 +57,20 @@ class CLIController:
         if video_path:
             srt_path = os.path.splitext(video_path)[0] + ".srt"
             self.srt.generate(self.hotkeys.get_markers(), srt_path, duration=duration)
-            print(f"Session finished. Video: {video_path}, SRT: {srt_path}")
+            
+            chapters_path = os.path.splitext(video_path)[0] + "_chapters.txt"
+            self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
+            
+            print(f"Session finished. Video: {video_path}, SRT: {srt_path}, Chapters: {chapters_path}")
         else:
             # Fallback if video path is unknown
             output_dir = self.config.get("output.dir", "data/output")
             os.makedirs(output_dir, exist_ok=True)
-            srt_path = os.path.join(output_dir, f"recording_{int(time.time())}.srt")
+            timestamp = int(time.time())
+            srt_path = os.path.join(output_dir, f"recording_{timestamp}.srt")
             self.srt.generate(self.hotkeys.get_markers(), srt_path, duration=duration)
-            print(f"Session finished. SRT saved to: {srt_path} (Video path unknown)")
+            
+            chapters_path = os.path.join(output_dir, f"recording_{timestamp}_chapters.txt")
+            self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
+            
+            print(f"Session finished. SRT saved to: {srt_path}, Chapters to: {chapters_path} (Video path unknown)")

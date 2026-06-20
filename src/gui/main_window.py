@@ -501,17 +501,26 @@ class MainWindow(ctk.CTk):
                 srt_path = os.path.splitext(video_path)[0] + ".srt"
                 self.srt.generate(self.hotkeys.get_markers(), srt_path, duration=duration)
                 logging.info(f"SRT generated at: {srt_path}")
+                
+                chapters_path = os.path.splitext(video_path)[0] + "_chapters.txt"
+                self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
+                
                 self.last_video_dir = os.path.dirname(video_path)
-                self._notify("Recording Finished", f"Video and SRT saved.\n{os.path.basename(video_path)}")
+                self._notify("Recording Finished", f"Video and SRT/Chapters saved.\n{os.path.basename(video_path)}")
             else:
                 # Fallback: Save to data/output if video path is unknown
                 output_dir = "data/output"
                 os.makedirs(output_dir, exist_ok=True)
-                srt_path = os.path.join(output_dir, f"markers_{int(time.time())}.srt")
+                timestamp = int(time.time())
+                srt_path = os.path.join(output_dir, f"markers_{timestamp}.srt")
                 self.srt.generate(self.hotkeys.get_markers(), srt_path, duration=duration)
+                
+                chapters_path = os.path.join(output_dir, f"markers_{timestamp}_chapters.txt")
+                self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
+                
                 self.last_video_dir = os.path.abspath(output_dir)
-                logging.warning(f"Video path unknown. SRT saved as fallback: {srt_path}")
-                self._notify("Recording Finished", "Video path unknown. SRT saved to data/output.")
+                logging.warning(f"Video path unknown. SRT/Chapters saved as fallback: {srt_path}")
+                self._notify("Recording Finished", "Video path unknown. SRT/Chapters saved to data/output.")
             
             self.after(0, lambda: self.status_label.configure(text="Status: Idle"))
             self.after(0, lambda: self.start_button.configure(text="Start Recording", fg_color=["#3B8ED0", "#1F6AA5"], hover_color=["#367E93", "#144870"]))
@@ -655,7 +664,7 @@ class MainWindow(ctk.CTk):
     def _on_chapter_submit(self, event):
         text = self.chapter_entry.get().strip()
         if text and self.hotkeys:
-            self.hotkeys.add_manual_marker(text, self.chapter_input_time)
+            self.hotkeys.add_manual_marker(text, self.chapter_input_time, marker_type="chapter")
             self.chapter_entry.delete(0, "end")
             self.chapter_time_needs_update = True
         else:

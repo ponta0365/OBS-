@@ -74,7 +74,8 @@ class HotkeyManager:
         elapsed_time = self.get_elapsed_time()
         self.markers.append({
             "time": elapsed_time,
-            "text": text
+            "text": text,
+            "type": "subtitle"
         })
         logging.info(f"Setting text marker recorded: {text} at {elapsed_time:.2f}s")
 
@@ -99,18 +100,20 @@ class HotkeyManager:
         elapsed_time = self.get_elapsed_time()
         self.markers.append({
             "time": elapsed_time,
-            "text": text
+            "text": text,
+            "type": "chapter"
         })
         logging.info(f"Chapter recorded: {text} at {elapsed_time:.2f}s")
 
-    def add_manual_marker(self, text, timestamp):
+    def add_manual_marker(self, text, timestamp, marker_type="subtitle"):
         if not self.is_monitoring:
             return
         self.markers.append({
             "time": timestamp,
-            "text": text
+            "text": text,
+            "type": marker_type
         })
-        logging.info(f"Manual marker recorded: {text} at {timestamp:.2f}s")
+        logging.info(f"Manual marker recorded ({marker_type}): {text} at {timestamp:.2f}s")
 
     def get_elapsed_time(self):
         if not self.is_monitoring or self.start_time is None:

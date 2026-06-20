@@ -117,6 +117,52 @@ class AutomatedSystemTest(unittest.TestCase):
             path = obs.stop_recording()
             self.assertEqual(path, "C:/videos/test.mp4")
 
+    def test_srt_chapter_separation(self):
+        """SRT生成時にチャプターが除外され、別ファイルに正しく生成されるかテスト"""
+        markers = [
+            {"time": 2.5, "text": "字幕テスト1", "type": "subtitle"},
+            {"time": 5.0, "text": "チャプター1", "type": "chapter"},
+            {"time": 10.0, "text": "字幕テスト2", "type": "subtitle"}
+        ]
+        
+        srt_path = "data/test_output_temp.srt"
+        chap_path = "data/test_output_temp_chapters.txt"
+        
+        # Ensure output dir exists
+        os.makedirs("data", exist_ok=True)
+        
+        # Clean up any old files
+        for p in [srt_path, chap_path]:
+            if os.path.exists(p):
+                os.remove(p)
+                
+        # Generate SRT
+        self.assertTrue(self.srt.generate(markers, srt_path, duration=3.0))
+        # Generate Chapters
+        self.assertTrue(self.srt.generate_chapters(markers, chap_path))
+        
+        # Verify SRT contents: should contain "字幕テスト1" and "字幕テスト2", but NOT "チャプター1"
+        self.assertTrue(os.path.exists(srt_path))
+        with open(srt_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            self.assertIn("字幕テスト1", content)
+            self.assertIn("字幕テスト2", content)
+            self.assertNotIn("チャプター1", content)
+            
+        # Verify Chapter file contents: should contain "00:00 開始" (automatically prepended because no chapter at 0.0) and "00:05 チャプター1"
+        self.assertTrue(os.path.exists(chap_path))
+        with open(chap_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            lines = content.strip().split("\n")
+            self.assertEqual(len(lines), 2)
+            self.assertEqual(lines[0], "00:00 開始")
+            self.assertEqual(lines[1], "00:05 チャプター1")
+            
+        # Clean up
+        for p in [srt_path, chap_path]:
+            if os.path.exists(p):
+                os.remove(p)
+
 if __name__ == "__main__":
     print("Running Automated System Tests...")
     unittest.main(argv=['first-arg-is-ignored'], exit=False)
