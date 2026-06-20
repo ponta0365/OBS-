@@ -3,6 +3,7 @@ import logging
 import subprocess
 import os
 import time
+import threading
 
 class ObsController:
     def __init__(self, host, port, password, exe_path=None):
@@ -11,6 +12,16 @@ class ObsController:
         self.password = password
         self.exe_path = exe_path
         self.client = None
+        self.event_client = None
+        
+        # Event-driven recording state
+        self._recording_active = False
+        self._recording_stopped_event = threading.Event()
+        self._on_recording_stopped_callback = None
+        
+        # Heartbeat keep-alive
+        self._heartbeat_thread = None
+        self._heartbeat_stop = threading.Event()
 
     def is_obs_running(self):
         try:
@@ -92,7 +103,7 @@ class ObsController:
         self.client = None
         for attempt in range(3):
             try:
-                self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password)
+                self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password, timeout=30)
                 logging.info(f"Reconnected to OBS WebSocket (attempt {attempt + 1})")
                 return True
             except Exception as e:
@@ -103,21 +114,106 @@ class ObsController:
 
     def connect(self):
         try:
-            # Note: In some versions of obsws-python, the argument is 'pwd' instead of 'password'
-            # We use kwargs to be safe or check the latest docs. 
-            # In v1.x, ReqClient(host=..., port=..., password=...) is standard.
-            # But "authentication enabled but no password provided" suggests self.password might be empty.
             if not self.password:
                 logging.warning("OBS connection attempted without a password, but authentication is enabled on OBS.")
             
-            self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password)
+            self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password, timeout=30)
             logging.info("Connected to OBS WebSocket")
             return True
         except Exception as e:
             logging.error(f"Failed to connect to OBS: {e}")
             return False
 
+    def _start_event_client(self):
+        """イベントクライアントを起動し、録画状態変更を監視します。"""
+        try:
+            self.event_client = obs.EventClient(host=self.host, port=self.port, password=self.password)
+            self.event_client.callback.register(self._on_record_state_changed)
+            logging.info("OBS EventClient started - listening for recording state changes")
+        except Exception as e:
+            logging.warning(f"Failed to start EventClient (falling back to polling): {e}")
+            self.event_client = None
+
+    def _stop_event_client(self):
+        """イベントクライアントを停止します。"""
+        if self.event_client:
+            try:
+                self.event_client.disconnect()
+            except Exception:
+                pass
+            self.event_client = None
+            logging.info("OBS EventClient stopped")
+
+    def _on_record_state_changed(self, data):
+        """OBSから録画状態変更イベントを受信した際のコールバック。"""
+        try:
+            output_state = getattr(data, 'output_state', '')
+            output_active = getattr(data, 'output_active', None)
+            logging.info(f"OBS RecordStateChanged event: state={output_state}, active={output_active}")
+            
+            self._recording_active = bool(output_active)
+            
+            if not output_active:
+                logging.info("Recording stopped (detected via EventClient)")
+                self._recording_stopped_event.set()
+                if self._on_recording_stopped_callback:
+                    self._on_recording_stopped_callback()
+        except Exception as e:
+            logging.error(f"Error handling RecordStateChanged event: {e}")
+
+    def start_heartbeat(self):
+        """WebSocket接続を維持するためのハートビートスレッドを開始します。"""
+        self._heartbeat_stop.clear()
+        
+        def heartbeat_loop():
+            while not self._heartbeat_stop.is_set():
+                self._heartbeat_stop.wait(30)  # 30秒間隔
+                if self._heartbeat_stop.is_set():
+                    break
+                try:
+                    if self.client:
+                        self.client.get_version()
+                        # ログは出さない（30秒ごとに出ると煩い）
+                except Exception as e:
+                    logging.warning(f"Heartbeat failed, attempting reconnect: {e}")
+                    self.reconnect()
+        
+        self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True, name="OBS-Heartbeat")
+        self._heartbeat_thread.start()
+        logging.info("OBS WebSocket heartbeat started (30s interval)")
+
+    def stop_heartbeat(self):
+        """ハートビートスレッドを停止します。"""
+        self._heartbeat_stop.set()
+        if self._heartbeat_thread:
+            self._heartbeat_thread.join(timeout=5)
+            self._heartbeat_thread = None
+        logging.info("OBS WebSocket heartbeat stopped")
+
+    def start_monitoring(self, on_stopped_callback=None):
+        """録画状態の監視を開始します（EventClient + ハートビート）。"""
+        self._recording_active = True
+        self._recording_stopped_event.clear()
+        self._on_recording_stopped_callback = on_stopped_callback
+        self._start_event_client()
+        self.start_heartbeat()
+
+    def stop_monitoring(self):
+        """録画状態の監視を停止します。"""
+        self._on_recording_stopped_callback = None
+        self.stop_heartbeat()
+        self._stop_event_client()
+
+    def wait_for_recording_stop(self, timeout=None):
+        """録画停止イベントを待機します。Trueなら録画停止、Falseならタイムアウト。"""
+        return self._recording_stopped_event.wait(timeout=timeout)
+
+    def is_recording_active(self):
+        """現在の録画状態を返します（イベント駆動で更新）。"""
+        return self._recording_active
+
     def disconnect(self):
+        self.stop_monitoring()
         if self.client:
             self.client = None
             logging.info("Disconnected from OBS WebSocket")
@@ -128,6 +224,7 @@ class ObsController:
                 return False
         try:
             self.client.start_record()
+            self._recording_active = True
             logging.info("Started OBS recording")
             return True
         except Exception as e:
@@ -141,6 +238,7 @@ class ObsController:
                 return None
         try:
             response = self.client.stop_record()
+            self._recording_active = False
             logging.info(f"Stopped OBS recording. Response: {response}")
             
             # Extract output path from response
@@ -150,7 +248,6 @@ class ObsController:
             elif isinstance(response, dict) and 'outputPath' in response:
                 output_path = response['outputPath']
             elif hasattr(response, 'output_active') and not response.output_active:
-                # In some cases, we might need to wait or check another property
                 logging.warning("Recording stopped but output_path not found in response attributes.")
             
             if output_path:
@@ -162,6 +259,7 @@ class ObsController:
             if self.reconnect():
                 try:
                     response = self.client.stop_record()
+                    self._recording_active = False
                     output_path = getattr(response, 'output_path', None)
                     logging.info(f"Stopped OBS recording after reconnect. Path: {output_path}")
                     return output_path
@@ -238,4 +336,5 @@ class ObsController:
         except Exception as e:
             logging.error(f"Failed to set OBS record directory: {e}")
             return False
+
 

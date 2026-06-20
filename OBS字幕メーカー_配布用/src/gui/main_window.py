@@ -3,6 +3,7 @@ import threading
 import os
 import time
 import logging
+import gc
 import keyboard
 from win11toast import toast
 from src.config_manager import ConfigManager
@@ -29,6 +30,7 @@ class MainWindow(ctk.CTk):
         
         self.is_recording = False
         self.last_video_dir = None
+        self._global_hotkey_handle = None  # Track individual global hotkey handle
         
         self._setup_ui()
         self._setup_global_hotkeys()
@@ -42,16 +44,18 @@ class MainWindow(ctk.CTk):
             return False
 
     def _setup_global_hotkeys(self):
-        # Unhook first to prevent duplicates
-        try:
-            keyboard.unhook_all()
-        except Exception:
-            pass
+        # Remove only the previous global hotkey (not recording session hotkeys)
+        if self._global_hotkey_handle is not None:
+            try:
+                keyboard.remove_hotkey(self._global_hotkey_handle)
+            except Exception:
+                pass
+            self._global_hotkey_handle = None
 
         # Register global hotkey for start/stop recording from config
         toggle_key = self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r")
         try:
-            keyboard.add_hotkey(toggle_key, self._toggle_recording_safe)
+            self._global_hotkey_handle = keyboard.add_hotkey(toggle_key, self._toggle_recording_safe)
             logging.info(f"Global hotkey '{toggle_key}' registered for recording toggle")
         except Exception as e:
             logging.error(f"Failed to register global hotkey '{toggle_key}': {e}")
@@ -69,6 +73,9 @@ class MainWindow(ctk.CTk):
                 logging.info(f"Notification sent: {title}")
             except Exception as e:
                 logging.error(f"Notification failed: {e}")
+            finally:
+                # WinRT COMオブジェクトの蓄積を防止
+                gc.collect()
         
         # Run in separate thread to prevent blocking
         threading.Thread(target=show_toast, daemon=True).start()
@@ -425,20 +432,30 @@ class MainWindow(ctk.CTk):
             self._notify("Recording Started", "OBS recording has begun.")
             self.hotkeys.start_monitoring()
             
-            # Monitoring loop with connection resilience
+            # イベント駆動方式: OBS EventClientで録画停止を監視
+            # ポーリングの代わりにOBSからのイベント通知を使用（接続負荷を大幅軽減）
+            self.obs.start_monitoring(on_stopped_callback=lambda: self.after(0, self._on_obs_recording_stopped))
+            
+            # フォールバック: EventClientが失敗した場合のポーリング監視
+            # EventClient接続中は60秒間隔の軽量チェックのみ（従来の毎秒→60秒）
             consecutive_failures = 0
-            MAX_FAILURES = 5  # Allow up to 5 consecutive failures (~5sec) before stopping
+            MAX_FAILURES = 5
             while self.is_recording:
-                time.sleep(1)
+                # EventClientが動いていれば60秒間隔、なければ5秒間隔
+                check_interval = 60 if self.obs.event_client else 5
+                time.sleep(check_interval)
+                
+                if not self.is_recording:
+                    break
+                
+                # フォールバック: ステータス確認（EventClient障害時の保険）
                 status = self.obs.get_record_status()
                 if status is True:
-                    consecutive_failures = 0  # Reset counter on success
+                    consecutive_failures = 0
                 elif status is False:
-                    # OBS confirmed recording is NOT active
-                    logging.warning("OBS confirmed recording is not active. Stopping.")
+                    logging.warning("OBS confirmed recording is not active (detected via polling fallback). Stopping.")
                     break
                 else:
-                    # status is None - connection error, might be temporary
                     consecutive_failures += 1
                     logging.warning(f"Recording status check failed ({consecutive_failures}/{MAX_FAILURES})")
                     if consecutive_failures >= MAX_FAILURES:
@@ -463,6 +480,8 @@ class MainWindow(ctk.CTk):
         def finalize():
             if self.hotkeys:
                 self.hotkeys.stop_monitoring()
+            if self.obs:
+                self.obs.stop_monitoring()
             self.after(0, self._close_input_window)
             
             video_path = None
@@ -494,9 +513,17 @@ class MainWindow(ctk.CTk):
 
     def _on_error(self, message):
         self.is_recording = False
+        if self.obs:
+            self.obs.stop_monitoring()
         self.after(0, lambda: self.status_label.configure(text=f"Error: {message}"))
         self.after(0, lambda: self.start_button.configure(text="Start Recording", fg_color=["#3B8ED0", "#1F6AA5"]))
         logging.error(message)
+
+    def _on_obs_recording_stopped(self):
+        """OBS EventClient経由で録画停止が検出された際のコールバック。"""
+        if self.is_recording:
+            logging.info("Recording stop detected via OBS EventClient callback")
+            self._stop_recording_thread()
 
     def _get_setting_subtitle_text(self):
         return self.setting_text_input.get()
