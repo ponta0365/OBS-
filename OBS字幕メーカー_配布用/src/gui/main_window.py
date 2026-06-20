@@ -585,10 +585,14 @@ class MainWindow(ctk.CTk):
             else:
                 user32.ShowWindow(hwnd, 5) # SW_SHOW
 
-            # Altキーの空押しでSetForegroundWindowの制限をバイパス
-            user32.keybd_event(0x12, 0, 0, 0) # Alt down
+            # Altキー (VK_MENU = 0x12) が既に押されているかチェック
+            # 押されている場合はAltキーのシミュレーションをスキップして、キーが「押しっぱなし」状態になるのを防ぎます。
+            alt_pressed = (user32.GetAsyncKeyState(0x12) & 0x8000) != 0
+            if not alt_pressed:
+                user32.keybd_event(0x12, 0, 0, 0) # Alt down
             user32.SetForegroundWindow(hwnd)
-            user32.keybd_event(0x12, 0, 2, 0) # Alt up
+            if not alt_pressed:
+                user32.keybd_event(0x12, 0, 2, 0) # Alt up
             
             user32.SetActiveWindow(hwnd)
         except Exception as e:
