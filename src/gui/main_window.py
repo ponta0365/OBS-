@@ -195,11 +195,14 @@ class MainWindow(ctk.CTk):
         self.browse_output_button = ctk.CTkButton(output_dir_frame, text="Browse", width=60, command=self._browse_output_directory_ui)
         self.browse_output_button.pack(side="left", padx=(5, 0))
 
-        # 3. 日付フォルダ作成ボタン
+        # 3. 日付フォルダ作成ボタン & OBS反映ボタン
         date_folder_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         date_folder_frame.pack(fill="x", pady=2)
         self.create_date_folder_button = ctk.CTkButton(date_folder_frame, text="Create Date Folder", command=self._create_date_folder_action)
         self.create_date_folder_button.pack(side="left", padx=(110, 0))
+        
+        self.apply_folder_button = ctk.CTkButton(date_folder_frame, text="Apply Folder to OBS", command=self._apply_folder_to_obs_action)
+        self.apply_folder_button.pack(side="left", padx=(10, 0))
 
         # Hotkey & Subtitle Config
         self.hotkey_label = ctk.CTkLabel(self.main_frame, text="Subtitle & Hotkey Settings", font=ctk.CTkFont(size=16, weight="bold"))
@@ -669,12 +672,59 @@ class MainWindow(ctk.CTk):
                 if scene_col:
                     temp_obs.set_scene_collection(scene_col)
                 
+                # Apply output directory path to OBS
+                output_dir = self.config.get("output.dir")
+                dir_set_info = ""
+                if output_dir:
+                    absolute_path = os.path.abspath(output_dir)
+                    os.makedirs(absolute_path, exist_ok=True)
+                    if temp_obs.set_record_directory(absolute_path):
+                        dir_set_info = "\nRecording directory applied successfully."
+                    else:
+                        dir_set_info = "\nFailed to apply recording directory."
+                
                 temp_obs.disconnect()
                 self.after(0, lambda: self.status_label.configure(text="Status: Settings Applied"))
-                self._notify("OBS Connection Test", "Successfully applied profile and scene to OBS!")
+                self._notify("OBS Connection Test", f"Successfully applied settings to OBS!{dir_set_info}")
             else:
                 self.after(0, lambda: self.status_label.configure(text="Status: Apply Failed (Check Connection)"))
                 self._notify("OBS Connection Test", "Failed to connect to OBS. Please check port, password, and if OBS WebSocket is running.")
+                
+        threading.Thread(target=task, daemon=True).start()
+
+    def _apply_folder_to_obs_action(self):
+        self._save_settings()
+        
+        def task():
+            self.after(0, lambda: self.status_label.configure(text="Status: Applying Folder..."))
+            
+            temp_obs = ObsController(
+                self.config.get("obs.host"),
+                self.config.get("obs.port"),
+                self.config.get("obs.password")
+            )
+            
+            if temp_obs.connect():
+                output_dir = self.config.get("output.dir")
+                if output_dir:
+                    absolute_path = os.path.abspath(output_dir)
+                    os.makedirs(absolute_path, exist_ok=True)
+                    success = temp_obs.set_record_directory(absolute_path)
+                    
+                    temp_obs.disconnect()
+                    if success:
+                        self.after(0, lambda: self.status_label.configure(text="Status: Folder Applied"))
+                        self._notify("OBS Connection Test", "Successfully applied output folder to OBS!")
+                    else:
+                        self.after(0, lambda: self.status_label.configure(text="Status: Apply Folder Failed"))
+                        self._notify("OBS Connection Test", "Failed to apply output folder to OBS.")
+                else:
+                    temp_obs.disconnect()
+                    self.after(0, lambda: self.status_label.configure(text="Status: Idle"))
+                    self._notify("OBS Connection Test", "Output folder is not set in configuration.")
+            else:
+                self.after(0, lambda: self.status_label.configure(text="Status: Apply Failed (Check Connection)"))
+                self._notify("OBS Connection Test", "Failed to connect to OBS. Please check connection settings.")
                 
         threading.Thread(target=task, daemon=True).start()
 

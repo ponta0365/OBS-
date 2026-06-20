@@ -34,7 +34,9 @@ class ObsController:
     def launch_obs(self):
         if self.is_obs_running():
             logging.info("OBS is already running.")
-            return True
+            if not self.client:
+                self.connect()
+            return self.client is not None
         
         if not self.exe_path or not os.path.exists(self.exe_path):
             logging.error(f"OBS executable not found at: {self.exe_path}")
