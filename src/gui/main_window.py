@@ -148,6 +148,7 @@ class MainWindow(ctk.CTk):
         self.obs_port = self._create_input("Port:", str(self.config.get("obs.port")))
         self.obs_password = self._create_input("Password:", self.config.get("obs.password"), show="*")
         self.obs_path = self._create_input("OBS Path:", self.config.get("obs.path"))
+        self.mkvpropedit_path = self._create_input("mkvpropedit Path:", self.config.get("obs.mkvpropedit_path", "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe"))
         
         # OptionMenus for Profile and Scene Collection
         self.obs_profile_var = ctk.StringVar(value=self.config.get("obs.profile", ""))
@@ -250,6 +251,7 @@ class MainWindow(ctk.CTk):
                     "port": int(self.obs_port.get()) if self.obs_port.get().isdigit() else 4455,
                     "password": self.obs_password.get(),
                     "path": self.obs_path.get(),
+                    "mkvpropedit_path": self.mkvpropedit_path.get(),
                     "profile": self.obs_profile_var.get(),
                     "scene_collection": self.obs_scene_col_var.get()
                 },
@@ -285,6 +287,7 @@ class MainWindow(ctk.CTk):
         self._update_entry(self.obs_port, str(self.config.get("obs.port")))
         self._update_entry(self.obs_password, self.config.get("obs.password"))
         self._update_entry(self.obs_path, self.config.get("obs.path"))
+        self._update_entry(self.mkvpropedit_path, self.config.get("obs.mkvpropedit_path", "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe"))
         
         self.obs_profile_var.set(self.config.get("obs.profile", ""))
         self.obs_scene_col_var.set(self.config.get("obs.scene_collection", ""))
@@ -358,6 +361,7 @@ class MainWindow(ctk.CTk):
             self.config.set("obs.port", 4455)
         self.config.set("obs.password", self.obs_password.get())
         self.config.set("obs.path", self.obs_path.get())
+        self.config.set("obs.mkvpropedit_path", self.mkvpropedit_path.get())
         self.config.set("obs.profile", self.obs_profile_var.get())
         self.config.set("obs.scene_collection", self.obs_scene_col_var.get())
         
@@ -504,6 +508,10 @@ class MainWindow(ctk.CTk):
                 
                 chapters_path = os.path.splitext(video_path)[0] + "_chapters.txt"
                 self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
+                
+                # Embed chapters to MKV in-place using mkvpropedit
+                mkvprop_path = self.config.get("obs.mkvpropedit_path")
+                self.srt.embed_chapters(video_path, self.hotkeys.get_markers(), mkvpropedit_path=mkvprop_path)
                 
                 self.last_video_dir = os.path.dirname(video_path)
                 self._notify("Recording Finished", f"Video and SRT/Chapters saved.\n{os.path.basename(video_path)}")

@@ -61,6 +61,10 @@ class CLIController:
             chapters_path = os.path.splitext(video_path)[0] + "_chapters.txt"
             self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
             
+            # Embed chapters to MKV in-place using mkvpropedit
+            mkvprop_path = self.config.get("obs.mkvpropedit_path")
+            self.srt.embed_chapters(video_path, self.hotkeys.get_markers(), mkvpropedit_path=mkvprop_path)
+            
             print(f"Session finished. Video: {video_path}, SRT: {srt_path}, Chapters: {chapters_path}")
         else:
             # Fallback if video path is unknown

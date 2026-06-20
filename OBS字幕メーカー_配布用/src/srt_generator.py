@@ -70,3 +70,69 @@ class SrtGenerator:
         except Exception as e:
             logging.error(f"Failed to generate chapters file: {e}")
             return False
+
+    def embed_chapters(self, video_path, markers, mkvpropedit_path=None):
+        if not video_path or not video_path.lower().endswith(".mkv"):
+            return False
+            
+        if not mkvpropedit_path or not os.path.exists(mkvpropedit_path):
+            # Check default path
+            import shutil
+            found_path = shutil.who() if hasattr(shutil, "who") else shutil.which("mkvpropedit")
+            if not found_path:
+                found_path = shutil.which("mkvpropedit")
+            if found_path:
+                mkvpropedit_path = found_path
+            else:
+                default_path = r"C:\Program Files\MKVToolNix\mkvpropedit.exe"
+                if os.path.exists(default_path):
+                    mkvpropedit_path = default_path
+                    
+        if not mkvpropedit_path or not os.path.exists(mkvpropedit_path):
+            logging.warning("mkvpropedit not found. Skipping embedding chapters to MKV.")
+            return False
+            
+        # Create a temporary OGM chapter file
+        temp_ogm_path = video_path + ".temp_chapters.txt"
+        
+        # We need format_ogm_time
+        def format_ogm_time(seconds):
+            hours = int(seconds // 3600)
+            minutes = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            millis = int((seconds - int(seconds)) * 1000)
+            return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+            
+        chapter_markers = [m for m in markers if m.get("type") == "chapter"]
+        if not chapter_markers:
+            return False
+            
+        chapter_markers = sorted(chapter_markers, key=lambda x: x["time"])
+        if not chapter_markers or chapter_markers[0]["time"] >= 1.0:
+            chapter_markers.insert(0, {"time": 0.0, "text": "開始"})
+            
+        try:
+            # Write OGM format
+            with open(temp_ogm_path, "w", encoding="utf-8") as f:
+                for idx, marker in enumerate(chapter_markers):
+                    chap_num = idx + 1
+                    time_str = format_ogm_time(marker["time"])
+                    f.write(f"CHAPTER{chap_num:02d}={time_str}\n")
+                    f.write(f"CHAPTER{chap_num:02d}NAME={marker['text']}\n")
+                    
+            # Run mkvpropedit
+            import subprocess
+            cmd = [mkvpropedit_path, video_path, "--chapters", temp_ogm_path]
+            logging.info(f"Running mkvpropedit: {' '.join(cmd)}")
+            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            logging.info("Successfully embedded chapters into MKV.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to embed chapters in MKV: {e}")
+            return False
+        finally:
+            if os.path.exists(temp_ogm_path):
+                try:
+                    os.remove(temp_ogm_path)
+                except Exception:
+                    pass

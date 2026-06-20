@@ -163,6 +163,35 @@ class AutomatedSystemTest(unittest.TestCase):
             if os.path.exists(p):
                 os.remove(p)
 
+    @patch('subprocess.run')
+    def test_mkv_chapters_embed(self, mock_run):
+        """mkvpropeditによるチャプター埋め込み処理が正しく動作するかテスト"""
+        markers = [
+            {"time": 5.0, "text": "チャプター1", "type": "chapter"}
+        ]
+        
+        # Test case 1: Non-mkv files should return False immediately
+        self.assertFalse(self.srt.embed_chapters("video.mp4", markers, "mkvpropedit.exe"))
+        
+        # Test case 2: Empty chapters should return False
+        self.assertFalse(self.srt.embed_chapters("video.mkv", [], "mkvpropedit.exe"))
+        
+        # Test case 3: Valid call should run subprocess and return True
+        with patch('os.path.exists') as mock_exists:
+            # We mock exists to return True for the exe path
+            mock_exists.side_effect = lambda path: True if "mkvpropedit" in path or "temp_chapters" in path else False
+            
+            # Run
+            result = self.srt.embed_chapters("video.mkv", markers, "mkvpropedit.exe")
+            
+            # Assertions
+            mock_run.assert_called_once()
+            args = mock_run.call_args[0][0]
+            self.assertEqual(args[0], "mkvpropedit.exe")
+            self.assertEqual(args[1], "video.mkv")
+            self.assertEqual(args[2], "--chapters")
+            self.assertTrue(args[3].endswith(".temp_chapters.txt"))
+
 if __name__ == "__main__":
     print("Running Automated System Tests...")
     unittest.main(argv=['first-arg-is-ignored'], exit=False)
