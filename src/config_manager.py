@@ -11,7 +11,7 @@ class ConfigManager:
             "port": 4455,
             "password": "",
             "path": "C:\\Program Files\\obs-studio\\bin\\64bit\\obs64.exe",
-            "mkvpropedit_path": "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe",
+            "ffmpeg_path": "",
             "profile": "",
             "scene_collection": ""
         },
@@ -105,13 +105,17 @@ class ConfigManager:
                 }
                 updated = True
             
-            # Add mkvpropedit_path if missing
+            # Add ffmpeg_path if missing and remove mkvpropedit_path
             if "obs" not in preset:
                 preset["obs"] = self.BASE_CONFIG_TEMPLATE["obs"].copy()
                 updated = True
-            elif "mkvpropedit_path" not in preset["obs"]:
-                preset["obs"]["mkvpropedit_path"] = "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe"
-                updated = True
+            else:
+                if "mkvpropedit_path" in preset["obs"]:
+                    del preset["obs"]["mkvpropedit_path"]
+                    updated = True
+                if "ffmpeg_path" not in preset["obs"]:
+                    preset["obs"]["ffmpeg_path"] = ""
+                    updated = True
 
             # Add subtitles.duration if missing
             if "subtitles" not in preset:

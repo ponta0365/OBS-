@@ -148,7 +148,17 @@ class MainWindow(ctk.CTk):
         self.obs_port = self._create_input("Port:", str(self.config.get("obs.port")))
         self.obs_password = self._create_input("Password:", self.config.get("obs.password"), show="*")
         self.obs_path = self._create_input("OBS Path:", self.config.get("obs.path"))
-        self.mkvpropedit_path = self._create_input("mkvpropedit Path:", self.config.get("obs.mkvpropedit_path", "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe"))
+        
+        # FFmpeg configuration (input + Browse button)
+        ffmpeg_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        ffmpeg_frame.pack(fill="x", pady=2)
+        ffmpeg_label = ctk.CTkLabel(ffmpeg_frame, text="FFmpeg Path:", width=100, anchor="w")
+        ffmpeg_label.pack(side="left")
+        self.ffmpeg_path_input = ctk.CTkEntry(ffmpeg_frame)
+        self.ffmpeg_path_input.insert(0, self.config.get("obs.ffmpeg_path", ""))
+        self.ffmpeg_path_input.pack(side="left", fill="x", expand=True, padx=(10, 0))
+        self.browse_ffmpeg_button = ctk.CTkButton(ffmpeg_frame, text="Browse", width=60, command=self._browse_ffmpeg_directory)
+        self.browse_ffmpeg_button.pack(side="left", padx=(5, 0))
         
         # OptionMenus for Profile and Scene Collection
         self.obs_profile_var = ctk.StringVar(value=self.config.get("obs.profile", ""))
@@ -251,7 +261,7 @@ class MainWindow(ctk.CTk):
                     "port": int(self.obs_port.get()) if self.obs_port.get().isdigit() else 4455,
                     "password": self.obs_password.get(),
                     "path": self.obs_path.get(),
-                    "mkvpropedit_path": self.mkvpropedit_path.get(),
+                    "ffmpeg_path": self.ffmpeg_path_input.get(),
                     "profile": self.obs_profile_var.get(),
                     "scene_collection": self.obs_scene_col_var.get()
                 },
@@ -287,7 +297,7 @@ class MainWindow(ctk.CTk):
         self._update_entry(self.obs_port, str(self.config.get("obs.port")))
         self._update_entry(self.obs_password, self.config.get("obs.password"))
         self._update_entry(self.obs_path, self.config.get("obs.path"))
-        self._update_entry(self.mkvpropedit_path, self.config.get("obs.mkvpropedit_path", "C:\\Program Files\\MKVToolNix\\mkvpropedit.exe"))
+        self._update_entry(self.ffmpeg_path_input, self.config.get("obs.ffmpeg_path", ""))
         
         self.obs_profile_var.set(self.config.get("obs.profile", ""))
         self.obs_scene_col_var.set(self.config.get("obs.scene_collection", ""))
@@ -361,7 +371,7 @@ class MainWindow(ctk.CTk):
             self.config.set("obs.port", 4455)
         self.config.set("obs.password", self.obs_password.get())
         self.config.set("obs.path", self.obs_path.get())
-        self.config.set("obs.mkvpropedit_path", self.mkvpropedit_path.get())
+        self.config.set("obs.ffmpeg_path", self.ffmpeg_path_input.get())
         self.config.set("obs.profile", self.obs_profile_var.get())
         self.config.set("obs.scene_collection", self.obs_scene_col_var.get())
         
@@ -509,9 +519,10 @@ class MainWindow(ctk.CTk):
                 chapters_path = os.path.splitext(video_path)[0] + "_chapters.txt"
                 self.srt.generate_chapters(self.hotkeys.get_markers(), chapters_path)
                 
-                # Embed chapters to MKV in-place using mkvpropedit
-                mkvprop_path = self.config.get("obs.mkvpropedit_path")
-                self.srt.embed_chapters(video_path, self.hotkeys.get_markers(), mkvpropedit_path=mkvprop_path)
+                # Embed chapters to MKV using FFmpeg
+                ffmpeg_path = self.config.get("obs.ffmpeg_path")
+                total_duration = self.hotkeys.get_elapsed_time() if self.hotkeys else 0.0
+                self.srt.embed_chapters(video_path, self.hotkeys.get_markers(), ffmpeg_path=ffmpeg_path, total_duration=total_duration)
                 
                 self.last_video_dir = os.path.dirname(video_path)
                 self._notify("Recording Finished", f"Video and SRT/Chapters saved.\n{os.path.basename(video_path)}")
@@ -826,6 +837,15 @@ class MainWindow(ctk.CTk):
         dir_path = filedialog.askdirectory(initialdir=initial, title="Select Output Folder")
         if dir_path:
             self._update_entry(self.output_dir_input, dir_path)
+
+    def _browse_ffmpeg_directory(self):
+        from tkinter import filedialog
+        initial = self.ffmpeg_path_input.get()
+        if not os.path.exists(initial):
+            initial = os.path.expanduser("~")
+        dir_path = filedialog.askdirectory(initialdir=initial, title="Select FFmpeg Folder")
+        if dir_path:
+            self._update_entry(self.ffmpeg_path_input, dir_path)
 
     def _create_date_folder_action(self):
         import datetime

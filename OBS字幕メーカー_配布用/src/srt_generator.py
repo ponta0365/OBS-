@@ -71,38 +71,43 @@ class SrtGenerator:
             logging.error(f"Failed to generate chapters file: {e}")
             return False
 
-    def embed_chapters(self, video_path, markers, mkvpropedit_path=None):
+    def embed_chapters(self, video_path, markers, ffmpeg_path=None, total_duration=0.0):
         if not video_path or not video_path.lower().endswith(".mkv"):
             return False
             
-        if not mkvpropedit_path or not os.path.exists(mkvpropedit_path):
-            # Check default path
-            import shutil
-            found_path = shutil.who() if hasattr(shutil, "who") else shutil.which("mkvpropedit")
-            if not found_path:
-                found_path = shutil.which("mkvpropedit")
-            if found_path:
-                mkvpropedit_path = found_path
-            else:
-                default_path = r"C:\Program Files\MKVToolNix\mkvpropedit.exe"
-                if os.path.exists(default_path):
-                    mkvpropedit_path = default_path
-                    
-        if not mkvpropedit_path or not os.path.exists(mkvpropedit_path):
-            logging.warning("mkvpropedit not found. Skipping embedding chapters to MKV.")
-            return False
-            
-        # Create a temporary OGM chapter file
-        temp_ogm_path = video_path + ".temp_chapters.txt"
+        # Find ffmpeg executable
+        import shutil
+        ffmpeg_exe = None
         
-        # We need format_ogm_time
-        def format_ogm_time(seconds):
-            hours = int(seconds // 3600)
-            minutes = int((seconds % 3600) // 60)
-            secs = int(seconds % 60)
-            millis = int((seconds - int(seconds)) * 1000)
-            return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millis:03d}"
+        # 1. Check custom path if specified
+        if ffmpeg_path:
+            if os.path.isdir(ffmpeg_path):
+                exe_path = os.path.join(ffmpeg_path, "ffmpeg.exe")
+                if os.path.exists(exe_path):
+                    ffmpeg_exe = exe_path
+            elif os.path.exists(ffmpeg_path):
+                ffmpeg_exe = ffmpeg_path
+                
+        # 2. Check system PATH
+        if not ffmpeg_exe:
+            ffmpeg_exe = shutil.which("ffmpeg")
             
+        # 3. Check common paths
+        if not ffmpeg_exe:
+            default_paths = [
+                r"C:\ffmpeg\bin\ffmpeg.exe",
+                r"C:\Program Files\ffmpeg\bin\ffmpeg.exe",
+                r"C:\ffmpeg\ffmpeg.exe",
+            ]
+            for p in default_paths:
+                if os.path.exists(p):
+                    ffmpeg_exe = p
+                    break
+                    
+        if not ffmpeg_exe or not os.path.exists(ffmpeg_exe):
+            logging.warning("ffmpeg executable not found. Skipping embedding chapters to MKV.")
+            return False
+
         chapter_markers = [m for m in markers if m.get("type") == "chapter"]
         if not chapter_markers:
             return False
@@ -110,29 +115,77 @@ class SrtGenerator:
         chapter_markers = sorted(chapter_markers, key=lambda x: x["time"])
         if not chapter_markers or chapter_markers[0]["time"] >= 1.0:
             chapter_markers.insert(0, {"time": 0.0, "text": "開始"})
-            
+
+        # Paths
+        temp_meta_path = video_path + ".temp_meta.txt"
+        temp_out_path = video_path + ".temp_out.mkv"
+
         try:
-            # Write OGM format
-            with open(temp_ogm_path, "w", encoding="utf-8") as f:
-                for idx, marker in enumerate(chapter_markers):
-                    chap_num = idx + 1
-                    time_str = format_ogm_time(marker["time"])
-                    f.write(f"CHAPTER{chap_num:02d}={time_str}\n")
-                    f.write(f"CHAPTER{chap_num:02d}NAME={marker['text']}\n")
-                    
-            # Run mkvpropedit
+            # Generate FFMETADATA file
+            with open(temp_meta_path, "w", encoding="utf-8") as f:
+                f.write(";FFMETADATA1\n")
+                for i, marker in enumerate(chapter_markers):
+                    start_ms = int(marker["time"] * 1000)
+                    if i < len(chapter_markers) - 1:
+                        end_ms = int(chapter_markers[i+1]["time"] * 1000)
+                    else:
+                        end_ms = int(max(total_duration * 1000, start_ms + 5000))
+                        
+                    f.write("[CHAPTER]\n")
+                    f.write("TIMEBASE=1/1000\n")
+                    f.write(f"START={start_ms}\n")
+                    f.write(f"END={end_ms}\n")
+                    # Escape metadata characters
+                    escaped_title = marker["text"].replace("\\", "\\\\").replace(";", "\\;").replace("#", "\\#").replace("=", "\\=")
+                    f.write(f"title={escaped_title}\n\n")
+
+            # Run ffmpeg
             import subprocess
-            cmd = [mkvpropedit_path, video_path, "--chapters", temp_ogm_path]
-            logging.info(f"Running mkvpropedit: {' '.join(cmd)}")
+            import time
+            cmd = [
+                ffmpeg_exe,
+                "-y",
+                "-i", video_path,
+                "-i", temp_meta_path,
+                "-map_metadata", "1",
+                "-map_chapters", "1",
+                "-codec", "copy",
+                temp_out_path
+            ]
+            logging.info(f"Running FFmpeg to embed chapters: {' '.join(cmd)}")
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            logging.info("Successfully embedded chapters into MKV.")
+            logging.info("FFmpeg successfully created MKV with embedded chapters.")
+
+            # Replace original file with the new file
+            # Wait for any file locks to release (try up to 5 times)
+            success = False
+            for attempt in range(5):
+                try:
+                    if os.path.exists(video_path):
+                        os.remove(video_path)
+                    os.rename(temp_out_path, video_path)
+                    success = True
+                    logging.info("Successfully replaced video file with chapter-embedded version.")
+                    break
+                except Exception as ex:
+                    logging.warning(f"File replacement attempt {attempt+1}/5 failed: {ex}")
+                    time.sleep(1)
+            
+            if not success:
+                raise OSError("Could not replace video file (possibly locked by OBS or other process).")
             return True
+            
         except Exception as e:
-            logging.error(f"Failed to embed chapters in MKV: {e}")
+            logging.error(f"Failed to embed chapters in MKV using FFmpeg: {e}")
+            if os.path.exists(temp_out_path):
+                try:
+                    os.remove(temp_out_path)
+                except Exception:
+                    pass
             return False
         finally:
-            if os.path.exists(temp_ogm_path):
+            if os.path.exists(temp_meta_path):
                 try:
-                    os.remove(temp_ogm_path)
+                    os.remove(temp_meta_path)
                 except Exception:
                     pass

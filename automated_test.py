@@ -164,33 +164,44 @@ class AutomatedSystemTest(unittest.TestCase):
                 os.remove(p)
 
     @patch('subprocess.run')
-    def test_mkv_chapters_embed(self, mock_run):
-        """mkvpropeditによるチャプター埋め込み処理が正しく動作するかテスト"""
+    def test_ffmpeg_chapters_embed(self, mock_run):
+        """FFmpegによるチャプター埋め込み処理が正しく動作するかテスト"""
         markers = [
             {"time": 5.0, "text": "チャプター1", "type": "chapter"}
         ]
         
         # Test case 1: Non-mkv files should return False immediately
-        self.assertFalse(self.srt.embed_chapters("video.mp4", markers, "mkvpropedit.exe"))
+        self.assertFalse(self.srt.embed_chapters("video.mp4", markers, "ffmpeg.exe"))
         
         # Test case 2: Empty chapters should return False
-        self.assertFalse(self.srt.embed_chapters("video.mkv", [], "mkvpropedit.exe"))
+        self.assertFalse(self.srt.embed_chapters("video.mkv", [], "ffmpeg.exe"))
         
         # Test case 3: Valid call should run subprocess and return True
-        with patch('os.path.exists') as mock_exists:
+        with patch('os.path.exists') as mock_exists, \
+             patch('os.remove') as mock_remove, \
+             patch('os.rename') as mock_rename:
             # We mock exists to return True for the exe path
-            mock_exists.side_effect = lambda path: True if "mkvpropedit" in path or "temp_chapters" in path else False
+            mock_exists.side_effect = lambda path: True if "ffmpeg" in path or "temp_meta" in path or "temp_out" in path or "video.mkv" in path else False
             
             # Run
-            result = self.srt.embed_chapters("video.mkv", markers, "mkvpropedit.exe")
+            result = self.srt.embed_chapters("video.mkv", markers, "ffmpeg.exe", total_duration=10.0)
             
             # Assertions
             mock_run.assert_called_once()
             args = mock_run.call_args[0][0]
-            self.assertEqual(args[0], "mkvpropedit.exe")
-            self.assertEqual(args[1], "video.mkv")
-            self.assertEqual(args[2], "--chapters")
-            self.assertTrue(args[3].endswith(".temp_chapters.txt"))
+            self.assertEqual(args[0], "ffmpeg.exe")
+            self.assertEqual(args[1], "-y")
+            self.assertEqual(args[2], "-i")
+            self.assertEqual(args[3], "video.mkv")
+            self.assertEqual(args[4], "-i")
+            self.assertTrue(args[5].endswith(".temp_meta.txt"))
+            self.assertEqual(args[6], "-map_metadata")
+            self.assertEqual(args[7], "1")
+            self.assertEqual(args[8], "-map_chapters")
+            self.assertEqual(args[9], "1")
+            self.assertEqual(args[10], "-codec")
+            self.assertEqual(args[11], "copy")
+            self.assertTrue(args[12].endswith(".temp_out.mkv"))
 
 if __name__ == "__main__":
     print("Running Automated System Tests...")
