@@ -86,6 +86,21 @@ class ObsController:
             return [s['sceneName'] if isinstance(s, dict) else s.scene_name for s in scenes]
         except Exception: return []
 
+    def reconnect(self):
+        """WebSocket接続が切断された場合に自動再接続を試みます。"""
+        logging.info("Attempting to reconnect to OBS WebSocket...")
+        self.client = None
+        for attempt in range(3):
+            try:
+                self.client = obs.ReqClient(host=self.host, port=self.port, password=self.password)
+                logging.info(f"Reconnected to OBS WebSocket (attempt {attempt + 1})")
+                return True
+            except Exception as e:
+                logging.warning(f"Reconnect attempt {attempt + 1}/3 failed: {e}")
+                time.sleep(2)
+        logging.error("Failed to reconnect to OBS WebSocket after 3 attempts")
+        return False
+
     def connect(self):
         try:
             # Note: In some versions of obsws-python, the argument is 'pwd' instead of 'password'
@@ -121,7 +136,9 @@ class ObsController:
 
     def stop_recording(self):
         if not self.client:
-            return None
+            # Try reconnecting before giving up
+            if not self.reconnect():
+                return None
         try:
             response = self.client.stop_record()
             logging.info(f"Stopped OBS recording. Response: {response}")
@@ -141,6 +158,15 @@ class ObsController:
             return output_path
         except Exception as e:
             logging.error(f"Failed to stop recording: {e}")
+            # One more attempt after reconnect
+            if self.reconnect():
+                try:
+                    response = self.client.stop_record()
+                    output_path = getattr(response, 'output_path', None)
+                    logging.info(f"Stopped OBS recording after reconnect. Path: {output_path}")
+                    return output_path
+                except Exception as e2:
+                    logging.error(f"Failed to stop recording even after reconnect: {e2}")
             return None
 
     def get_record_status(self):
@@ -150,8 +176,15 @@ class ObsController:
             response = self.client.get_record_status()
             return response.output_active
         except Exception as e:
-            logging.error(f"Failed to get record status: {e}")
-            return False
+            logging.warning(f"get_record_status failed, attempting reconnect: {e}")
+            # Attempt reconnect and retry once
+            if self.reconnect():
+                try:
+                    response = self.client.get_record_status()
+                    return response.output_active
+                except Exception as e2:
+                    logging.error(f"get_record_status failed even after reconnect: {e2}")
+            return None  # None means "unknown" - distinct from False ("not recording")
 
     def set_record_directory(self, path):
         if not self.client:

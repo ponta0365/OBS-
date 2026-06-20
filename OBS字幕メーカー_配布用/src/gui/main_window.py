@@ -425,11 +425,25 @@ class MainWindow(ctk.CTk):
             self._notify("Recording Started", "OBS recording has begun.")
             self.hotkeys.start_monitoring()
             
-            # Monitoring loop
+            # Monitoring loop with connection resilience
+            consecutive_failures = 0
+            MAX_FAILURES = 5  # Allow up to 5 consecutive failures (~5sec) before stopping
             while self.is_recording:
                 time.sleep(1)
-                if not self.obs.get_record_status():
+                status = self.obs.get_record_status()
+                if status is True:
+                    consecutive_failures = 0  # Reset counter on success
+                elif status is False:
+                    # OBS confirmed recording is NOT active
+                    logging.warning("OBS confirmed recording is not active. Stopping.")
                     break
+                else:
+                    # status is None - connection error, might be temporary
+                    consecutive_failures += 1
+                    logging.warning(f"Recording status check failed ({consecutive_failures}/{MAX_FAILURES})")
+                    if consecutive_failures >= MAX_FAILURES:
+                        logging.error(f"Recording status check failed {MAX_FAILURES} times consecutively. Stopping.")
+                        break
             
             # Cleanup handled by _stop_recording_thread setting is_recording=False
             # but if OBS stops it externally, we catch it here.

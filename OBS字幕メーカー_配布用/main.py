@@ -1,6 +1,7 @@
 import argparse
 import sys
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import ctypes
 
@@ -24,14 +25,20 @@ def main():
         )
         sys.exit(0)
 
-    # Setup logging to file
+    # Setup logging to file with rotation (max 5MB, keep 3 backups)
     log_path = os.path.join("data", "app.log")
     os.makedirs("data", exist_ok=True)
+    
+    file_handler = RotatingFileHandler(
+        log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8'
+    )
+    file_handler.setLevel(logging.INFO)
+    
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
         handlers=[
-            logging.FileHandler(log_path, encoding='utf-8'),
+            file_handler,
             logging.StreamHandler(sys.stdout)
         ]
     )
