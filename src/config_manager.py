@@ -19,6 +19,7 @@ class ConfigManager:
             "key_record_toggle": "ctrl+alt+r",
             "key_record_subtitle": "ctrl+alt+t",
             "key_open_window": "alt+g",
+            "key_open_chapter_window": "alt+v",
             "key_add_chapter": "alt+c"
         },
         "subtitles": {
@@ -86,6 +87,9 @@ class ConfigManager:
                 if "key_open_window" not in preset["hotkeys"]:
                     preset["hotkeys"]["key_open_window"] = "alt+g"
                     updated = True
+                if "key_open_chapter_window" not in preset["hotkeys"]:
+                    preset["hotkeys"]["key_open_chapter_window"] = "alt+v"
+                    updated = True
                 if "key_add_chapter" not in preset["hotkeys"]:
                     preset["hotkeys"]["key_add_chapter"] = "alt+c"
                     updated = True
@@ -95,6 +99,7 @@ class ConfigManager:
                     "key_record_toggle": "ctrl+alt+r",
                     "key_record_subtitle": "ctrl+alt+t",
                     "key_open_window": "alt+g",
+                    "key_open_chapter_window": "alt+v",
                     "key_add_chapter": "alt+c"
                 }
                 updated = True

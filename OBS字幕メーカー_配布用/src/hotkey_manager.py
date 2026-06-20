@@ -20,9 +20,9 @@ class HotkeyManager:
         self.chapter_count = 0
         self.handlers = []
         
-        # Get keybindings from config, falling back to original defaults
         key_record_subtitle = self.hotkey_config.get("key_record_subtitle", "ctrl+alt+t")
         key_open_window = self.hotkey_config.get("key_open_window", "alt+g")
+        key_open_chapter_window = self.hotkey_config.get("key_open_chapter_window", "alt+v")
         key_add_chapter = self.hotkey_config.get("key_add_chapter", "alt+c")
         
         try:
@@ -38,6 +38,13 @@ class HotkeyManager:
             logging.info(f"Hotkey registered: '{key_open_window}' for input window trigger")
         except Exception as e:
             logging.error(f"Failed to register hotkey '{key_open_window}': {e}")
+
+        try:
+            h = keyboard.add_hotkey(key_open_chapter_window, self._trigger_chapter_window)
+            self.handlers.append(h)
+            logging.info(f"Hotkey registered: '{key_open_chapter_window}' for chapter window trigger")
+        except Exception as e:
+            logging.error(f"Failed to register hotkey '{key_open_chapter_window}': {e}")
             
         try:
             h = keyboard.add_hotkey(key_add_chapter, self._record_chapter)
@@ -75,7 +82,13 @@ class HotkeyManager:
         if not self.is_monitoring:
             return
         if self.show_input_window_callback:
-            self.show_input_window_callback()
+            self.show_input_window_callback("subtitle")
+
+    def _trigger_chapter_window(self):
+        if not self.is_monitoring:
+            return
+        if self.show_input_window_callback:
+            self.show_input_window_callback("chapter")
 
     def _record_chapter(self):
         if not self.is_monitoring:

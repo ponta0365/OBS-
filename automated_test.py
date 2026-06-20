@@ -94,7 +94,7 @@ class AutomatedSystemTest(unittest.TestCase):
         self.assertEqual(markers[2]["time"], 15.5)
         
         manager.stop_monitoring()
-        self.assertEqual(mock_remove.call_count, 3)
+        self.assertEqual(mock_remove.call_count, 4)
 
     def test_obs_controller_interface(self):
         """OBSコントローラーのインターフェース（モック）テスト"""

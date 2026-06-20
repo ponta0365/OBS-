@@ -215,6 +215,7 @@ class MainWindow(ctk.CTk):
         self.key_record_toggle_input = self._create_input("Start/Stop Rec Hotkey:", self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r"))
         self.key_record_subtitle_input = self._create_input("Record Subtitle Hotkey:", self.config.get("hotkeys.key_record_subtitle", "ctrl+alt+t"))
         self.key_open_window_input = self._create_input("Open Input Window Hotkey:", self.config.get("hotkeys.key_open_window", "alt+g"))
+        self.key_open_chapter_window_input = self._create_input("Open Chapter Window Hotkey:", self.config.get("hotkeys.key_open_chapter_window", "alt+v"))
         self.key_add_chapter_input = self._create_input("Add Chapter Hotkey:", self.config.get("hotkeys.key_add_chapter", "alt+c"))
 
         help_text = (
@@ -257,6 +258,7 @@ class MainWindow(ctk.CTk):
                     "key_record_toggle": self.key_record_toggle_input.get().strip().lower(),
                     "key_record_subtitle": self.key_record_subtitle_input.get().strip().lower(),
                     "key_open_window": self.key_open_window_input.get().strip().lower(),
+                    "key_open_chapter_window": self.key_open_chapter_window_input.get().strip().lower(),
                     "key_add_chapter": self.key_add_chapter_input.get().strip().lower()
                 },
                 "subtitles": {
@@ -295,6 +297,7 @@ class MainWindow(ctk.CTk):
         self._update_entry(self.key_record_toggle_input, self.config.get("hotkeys.key_record_toggle", "ctrl+alt+r"))
         self._update_entry(self.key_record_subtitle_input, self.config.get("hotkeys.key_record_subtitle", "ctrl+alt+t"))
         self._update_entry(self.key_open_window_input, self.config.get("hotkeys.key_open_window", "alt+g"))
+        self._update_entry(self.key_open_chapter_window_input, self.config.get("hotkeys.key_open_chapter_window", "alt+v"))
         self._update_entry(self.key_add_chapter_input, self.config.get("hotkeys.key_add_chapter", "alt+c"))
 
         # Update Output settings
@@ -362,6 +365,7 @@ class MainWindow(ctk.CTk):
         self.config.set("hotkeys.key_record_toggle", self.key_record_toggle_input.get().strip().lower())
         self.config.set("hotkeys.key_record_subtitle", self.key_record_subtitle_input.get().strip().lower())
         self.config.set("hotkeys.key_open_window", self.key_open_window_input.get().strip().lower())
+        self.config.set("hotkeys.key_open_chapter_window", self.key_open_chapter_window_input.get().strip().lower())
         self.config.set("hotkeys.key_add_chapter", self.key_add_chapter_input.get().strip().lower())
 
         try:
@@ -531,8 +535,8 @@ class MainWindow(ctk.CTk):
     def _get_setting_subtitle_text(self):
         return self.setting_text_input.get()
 
-    def _show_input_window_safe(self):
-        self.after(0, self._open_input_window)
+    def _show_input_window_safe(self, focus_field="subtitle"):
+        self.after(0, lambda: self._open_input_window(focus_field=focus_field))
 
     def _force_focus_window(self, window):
         """Windows APIを使用してウィンドウをフォアグラウンドにし、フォーカスを強制します。"""
@@ -565,62 +569,105 @@ class MainWindow(ctk.CTk):
         window.lift()
         window.focus_force()
 
-    def _open_input_window(self):
+    def _open_input_window(self, focus_field="subtitle"):
         if hasattr(self, "input_window") and self.input_window and self.input_window.winfo_exists():
             self._force_focus_window(self.input_window)
             self.input_window.attributes("-topmost", True)
-            self.input_entry.focus_force() # Force focus back to input box
+            if focus_field == "chapter":
+                if hasattr(self, "chapter_entry") and self.chapter_entry:
+                    self.chapter_entry.focus_force()
+            else:
+                if hasattr(self, "input_entry") and self.input_entry:
+                    self.input_entry.focus_force()
             return
 
         self.input_window = ctk.CTkToplevel(self)
-        self.input_window.title("字幕入力")
-        self.input_window.geometry("400x100")
+        self.input_window.title("字幕・チャプター入力")
+        self.input_window.geometry("400x160")
         self.input_window.attributes("-topmost", True)
         self.input_window.resizable(False, False)
 
         self.input_window.protocol("WM_DELETE_WINDOW", self._close_input_window)
 
-        self.current_input_time = self.hotkeys.get_elapsed_time() if self.hotkeys else 0.0
-        self.time_needs_update = False
+        current_time = self.hotkeys.get_elapsed_time() if self.hotkeys else 0.0
+        self.subtitle_input_time = current_time
+        self.subtitle_time_needs_update = False
+        
+        self.chapter_input_time = current_time
+        self.chapter_time_needs_update = False
 
         frame = ctk.CTkFrame(self.input_window, fg_color="transparent")
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        label = ctk.CTkLabel(frame, text="字幕テキストを入力してください (Enterで送信):")
-        label.pack(anchor="w")
+        label_sub = ctk.CTkLabel(frame, text="字幕テキスト (Enterで確定):")
+        label_sub.pack(anchor="w")
 
         self.input_entry = ctk.CTkEntry(frame, width=380)
-        self.input_entry.pack(pady=(5, 0), fill="x")
+        self.input_entry.pack(pady=(2, 8), fill="x")
+
+        label_chap = ctk.CTkLabel(frame, text="チャプター名 (Enterで確定):")
+        label_chap.pack(anchor="w")
+
+        self.chapter_entry = ctk.CTkEntry(frame, width=380)
+        self.chapter_entry.pack(pady=(2, 0), fill="x")
         
         # Focus both window and entry immediately
         self._force_focus_window(self.input_window)
-        self.input_entry.focus_force()
+        if focus_field == "chapter":
+            self.chapter_entry.focus_force()
+        else:
+            self.input_entry.focus_force()
 
-        self.input_entry.bind("<Return>", self._on_input_submit)
-        self.input_entry.bind("<KeyPress>", self._on_input_keypress)
+        # Bind events for Subtitle
+        self.input_entry.bind("<Return>", self._on_subtitle_submit)
+        self.input_entry.bind("<KeyPress>", self._on_subtitle_keypress)
         self.input_entry.bind("<Escape>", lambda e: self._close_input_window())
 
-    def _on_input_keypress(self, event):
-        if self.time_needs_update:
-            if self.hotkeys:
-                self.current_input_time = self.hotkeys.get_elapsed_time()
-            self.time_needs_update = False
-            logging.info(f"Chapter timestamp preset to {self.current_input_time:.2f}s because typing started.")
+        # Bind events for Chapter
+        self.chapter_entry.bind("<Return>", self._on_chapter_submit)
+        self.chapter_entry.bind("<KeyPress>", self._on_chapter_keypress)
+        self.chapter_entry.bind("<Escape>", lambda e: self._close_input_window())
 
-    def _on_input_submit(self, event):
+    def _on_subtitle_keypress(self, event):
+        if self.subtitle_time_needs_update:
+            if self.hotkeys:
+                self.subtitle_input_time = self.hotkeys.get_elapsed_time()
+            self.subtitle_time_needs_update = False
+            logging.info(f"Subtitle timestamp preset to {self.subtitle_input_time:.2f}s because typing started.")
+
+    def _on_subtitle_submit(self, event):
         text = self.input_entry.get().strip()
         if text and self.hotkeys:
-            self.hotkeys.add_manual_marker(text, self.current_input_time)
+            self.hotkeys.add_manual_marker(text, self.subtitle_input_time)
             self.input_entry.delete(0, "end")
-            self.time_needs_update = True
+            self.subtitle_time_needs_update = True
         else:
             self.input_entry.delete(0, "end")
-            self.time_needs_update = True
+            self.subtitle_time_needs_update = True
+
+    def _on_chapter_keypress(self, event):
+        if self.chapter_time_needs_update:
+            if self.hotkeys:
+                self.chapter_input_time = self.hotkeys.get_elapsed_time()
+            self.chapter_time_needs_update = False
+            logging.info(f"Chapter timestamp preset to {self.chapter_input_time:.2f}s because typing started.")
+
+    def _on_chapter_submit(self, event):
+        text = self.chapter_entry.get().strip()
+        if text and self.hotkeys:
+            self.hotkeys.add_manual_marker(text, self.chapter_input_time)
+            self.chapter_entry.delete(0, "end")
+            self.chapter_time_needs_update = True
+        else:
+            self.chapter_entry.delete(0, "end")
+            self.chapter_time_needs_update = True
 
     def _close_input_window(self):
         if hasattr(self, "input_window") and self.input_window:
             self.input_window.destroy()
             self.input_window = None
+            self.chapter_entry = None
+            self.input_entry = None
 
     def _launch_obs_from_gui(self):
         self._save_settings()
